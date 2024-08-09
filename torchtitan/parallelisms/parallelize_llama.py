@@ -502,6 +502,7 @@ def parallelize_llama(model, world_mesh, parallel_dims, job_config: JobConfig):
         model = apply_ac(model, job_config)
 
     if job_config.training.compile:
+        torch._dynamo.config.cache_size_limit = 10000
         model = apply_compile(model, job_config)
 
     if parallel_dims.dp_enabled:

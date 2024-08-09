@@ -1,14 +1,14 @@
 # torchtitan Config.toml
-# NOTE: this toml config is a preset for 64 A100 GPUs.
+# NOTE: this toml config is a preset for 256 H100 GPUs.
 
 [job]
 dump_folder = "./outputs"
-description = "Llama 3 70B training"
+description = "Llama 3 400B training"
 
 [profiling]
-enable_profiling = true
+enable_profiling = false
 save_traces_folder = "profile_trace"
-profile_freq = 10
+profile_freq = 100
 
 [metrics]
 log_freq = 10
@@ -17,7 +17,7 @@ save_tb_folder = "tb"
 
 [model]
 name = "llama3"
-flavor = "70B"
+flavor = "400B"
 norm_type = "rmsnorm"  # [layernorm, np_layernorm, rmsnorm, fused_rmsnorm]
 tokenizer_path = "./torchtitan/datasets/tokenizer/original/tokenizer.model"
 
@@ -32,7 +32,7 @@ warmup_steps = 200  # lr scheduler warm up, normally 20% of the train steps
 max_norm = 1.0  # grad norm clipping
 steps = 1000
 data_parallel_degree = -1
-tensor_parallel_degree = 4  # 8-way TP
+tensor_parallel_degree = 2  # 8-way TP
 fp8_linear = ""
 compile = true
 dataset = "c4_mini"

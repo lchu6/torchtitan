@@ -175,6 +175,8 @@ class Attention(nn.Module):
         self,
         x: torch.Tensor,
         freqs_cis: torch.Tensor,
+        xk=None,
+        xv=None,
     ):
         """
         Forward pass of the attention module.
@@ -188,7 +190,11 @@ class Attention(nn.Module):
 
         """
         bs, seqlen, _ = x.shape
-        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
+        if xk is None:
+            xk, xv = self.wk(x), self.wv(x)
+        xk0, xv0 = xk, xv
+        xq = self.wq(x)
+        
 
         xq = xq.view(bs, seqlen, self.n_heads, self.head_dim)
         xk = xk.view(bs, seqlen, self.n_kv_heads, self.head_dim)
@@ -210,7 +216,7 @@ class Attention(nn.Module):
             1, 2
         ).contiguous()  # (bs, seqlen, n_local_heads, head_dim)
         output = output.view(bs, seqlen, -1)
-        return self.wo(output)
+        return self.wo(output), xk0, xv0
 
 
 class FeedForward(nn.Module):
@@ -319,8 +325,12 @@ class TransformerBlock(nn.Module):
             torch.Tensor: Output tensor after applying attention and feedforward layers.
 
         """
-        h = x + self.attention(self.attention_norm(x), freqs_cis)
-        out = h + self.feed_forward(self.ffn_norm(h))
+        xk, xv = None, None
+        for _ in range(8):
+            h, xk, xv = self.attention(self.attention_norm(x), freqs_cis, xk, xv)
+            h = x + h
+            out = h + self.feed_forward(self.ffn_norm(h))
+            x = out
         return out
 
     def init_weights(self):
