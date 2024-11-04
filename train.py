@@ -235,6 +235,7 @@ def main(job_config: JobConfig):
                 raise ValueError(
                     "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                 )
+            print("job_config", vars(job_config))
             wandb.config = vars(job_config)
 
 
