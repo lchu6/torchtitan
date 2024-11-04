@@ -235,6 +235,7 @@ def main(job_config: JobConfig):
                 raise ValueError(
                     "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
                 )
+            wandb.config = vars(job_config)
 
 
     # plot losses loaded from checkpoint (if any) to TensorBoard
