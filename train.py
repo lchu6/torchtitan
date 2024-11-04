@@ -259,6 +259,7 @@ def main(job_config: JobConfig):
 
     # variables used to keep info for metrics logging
     losses_since_last_log = []
+    gnorms_since_last_log = []
     ntokens_since_last_log = 0
     data_loading_times = []
     time_last_log = time.perf_counter()
@@ -282,6 +283,7 @@ def main(job_config: JobConfig):
     ) as memory_profiler:
         while train_state.step < job_config.training.steps:
             train_state.step += 1
+            train_state.ntokens += job_config.training.batch_size * dp_degree * job_config.training.seq_len
             gc_handler.run(train_state.step)
 
             # get batch
@@ -337,10 +339,16 @@ def main(job_config: JobConfig):
                     loss.backward()
 
             # clip gradients
+            total_norms = []
             for m in model_parts:
-                torch.nn.utils.clip_grad_norm_(
+                total_norm = torch.nn.utils.clip_grad_norm_(
                     m.parameters(), job_config.training.max_norm, foreach=True
                 )
+                total_norms.append(total_norm)
+            # get norm from different model parts and re-L2 them
+            total_norms = torch.stack(total_norms)
+            gnorm = torch.linalg.vector_norm(total_norms)
+            gnorms_since_last_log.append(gnorm)
 
             # sync float8 amaxes and scales
             float8_handler.sync_float8_amax_and_scale_history(model_parts)
@@ -363,13 +371,17 @@ def main(job_config: JobConfig):
             ):
                 losses = [loss.item() for loss in losses_since_last_log]
                 avg_loss, max_loss = sum(losses) / len(losses), max(losses)
+                gnorms = [gnorm.item() for gnorm in gnorms_since_last_log]
+                avg_gnorm = sum(gnorms) / len(gnorms)
                 if parallel_dims.dp_enabled:
                     global_avg_loss, global_max_loss = (
                         utils.dist_mean(avg_loss, dp_mesh),
                         utils.dist_max(max_loss, dp_mesh),
                     )
+                    global_avg_gnorm = utils.dist_mean(avg_gnorm, dp_mesh)
                 else:
                     global_avg_loss, global_max_loss = avg_loss, max_loss
+                    global_avg_gnorm = avg_gnorm
 
                 # update train state
                 train_state.log_steps.append(train_state.step)
@@ -410,7 +422,16 @@ def main(job_config: JobConfig):
                 }
                 metric_logger.log(metrics, step=train_state.step)
                 if torch.distributed.get_rank() == 0:
-                    wandb.log(metrics, step=train_state.step)
+                    # for wandb, we track a different set of metrics
+                    wandb_metrics = {
+                        "loss": global_avg_loss,
+                        "gradient norm": global_avg_gnorm,
+                        "learning rate": lr_schedulers.schedulers[0].get_last_lr()[0],
+                        "num tokens seen": train_state.ntokens,
+                        "current throughput": wps,
+                        "mfu": mfu,
+                    }
+                    wandb.log(wandb_metrics, step=train_state.step)
 
                 logger.info(
                     f"{color.cyan}step: {train_state.step:2}  "
