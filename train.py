@@ -215,6 +215,27 @@ def main(job_config: JobConfig):
         )
 
     metric_logger = build_metric_logger(job_config, parallel_dims)
+    # ideally we can convert existing MetricLogger into an interface and have wandb_logger as an instance
+    # for now, we create it separately for simplicity.
+    if job_config.metrics.enable_wandb:
+        try:
+            import wandb  # type: ignore
+        except ImportError:
+            raise ImportError("wandb is enabled in the config but wandb is not installed.")
+        if torch.distributed.get_rank() == 0:
+            logger.info("wandb is enabled!")
+            try:
+                wandb.init(
+                    project=job_config.metrics.wandb_project_name,
+                    dir=job_config.metrics.wandb_dir,
+                    resume="allow",
+                    id=job_config.metrics.wandb_run_id,
+                )
+            except wandb.errors.UsageError:
+                raise ValueError(
+                    "wandb failed to init, did you pass your wandb api key via WANDB_API_KEY?"
+                )
+
 
     # plot losses loaded from checkpoint (if any) to TensorBoard
     # NOTE: Loss info after the last log step before checkpoint saving will not be ploted.
@@ -386,6 +407,8 @@ def main(job_config: JobConfig):
                     "memory/num_ooms": gpu_mem_stats.num_ooms,
                 }
                 metric_logger.log(metrics, step=train_state.step)
+                if torch.distributed.get_rank() == 0:
+                    wandb.log(metrics, step=train_state.step)
 
                 logger.info(
                     f"{color.cyan}step: {train_state.step:2}  "
