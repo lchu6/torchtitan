@@ -421,17 +421,18 @@ def main(job_config: JobConfig):
                     "memory/num_ooms": gpu_mem_stats.num_ooms,
                 }
                 metric_logger.log(metrics, step=train_state.step)
-                if torch.distributed.get_rank() == 0:
-                    # for wandb, we track a different set of metrics
-                    wandb_metrics = {
-                        "loss": global_avg_loss,
-                        "gradient norm": global_avg_gnorm,
-                        "learning rate": lr_schedulers.schedulers[0].get_last_lr()[0],
-                        "num tokens seen": train_state.ntokens,
-                        "current throughput": wps,
-                        "mfu": mfu,
-                    }
-                    wandb.log(wandb_metrics, step=train_state.step)
+                if job_config.metrics.enable_wandb:
+                    if torch.distributed.get_rank() == 0:
+                        # for wandb, we track a different set of metrics
+                        wandb_metrics = {
+                            "loss": global_avg_loss,
+                            "gradient norm": global_avg_gnorm,
+                            "learning rate": lr_schedulers.schedulers[0].get_last_lr()[0],
+                            "num tokens seen": train_state.ntokens,
+                            "current throughput": wps,
+                            "mfu": mfu,
+                        }
+                        wandb.log(wandb_metrics, step=train_state.step)
 
                 logger.info(
                     f"{color.cyan}step: {train_state.step:2}  "
